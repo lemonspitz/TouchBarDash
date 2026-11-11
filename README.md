@@ -4,6 +4,24 @@ Weather, stocks and news on your MacBook Pro's Touch Bar, for whichever country 
 
 Made by **[@lemonspitz](https://github.com/lemonspitz)** · version 1.0
 
+## Screenshots
+
+**📈 Stocks:** price, today's change and a sparkline for each stock (Taiwan shown)
+
+![Stocks on the Touch Bar](docs/stocks.png)
+
+**📰 News:** the latest headlines from the country's news sites (Indonesia: Kompas and Tempo shown)
+
+![News on the Touch Bar](docs/news.png)
+
+**🌦️ Weather:** the next 24 hours, hour by hour
+
+![Hourly forecast on the Touch Bar](docs/forecast.png)
+
+**Settings:** pick a country, then fine-tune the stocks, news sources and weather
+
+<img src="docs/settings.png" alt="TouchBarDash Settings window" width="508">
+
 ## Install
 
 **Requirements:** an Apple Silicon Mac with a Touch Bar (13-inch MacBook Pro M1 2020 or M2 2022), macOS 13 or later.

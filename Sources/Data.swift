@@ -81,6 +81,11 @@ enum Settings {
         get { d.stringArray(forKey: "newsSources") ?? country.defaultNewsIDs }
         set { d.set(newValue, forKey: "newsSources") }
     }
+    /// Competitions shown in the 🏆 strip, in the order they appear in Competition.all.
+    static var sportIDs: [String] {
+        get { d.stringArray(forKey: "sports") ?? Competition.defaultIDs }
+        set { d.set(newValue, forKey: "sports") }
+    }
     static var newsSources: [NewsSource] {
         let on = Set(newsSourceIDs)
         return country.news.filter { on.contains($0.id) }
@@ -175,6 +180,7 @@ final class Store: NSObject, CLLocationManagerDelegate {
         refreshWeather()
         refreshStocks()
         refreshNews()
+        refreshSports()
         if Settings.useLocation { requestLocation() }
         timers = [
             Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
@@ -183,6 +189,11 @@ final class Store: NSObject, CLLocationManagerDelegate {
             },
             Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.refreshStocks() },
             Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in self?.refreshNews() },
+            // Scores: every minute while a game or race is live, otherwise every 10 minutes.
+            Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if self.sports.contains(where: { $0.state == .live }) || Date().timeIntervalSince(self.lastSports) > 590 { self.refreshSports() }
+            },
         ]
     }
 
@@ -190,9 +201,18 @@ final class Store: NSObject, CLLocationManagerDelegate {
         if Settings.useLocation { requestLocation() } else { refreshWeather() }
         refreshStocks()
         refreshNews()
+        refreshSports()
     }
 
     private func changed() { DispatchQueue.main.async { self.onChange?() } }
+
+    /// Like getJSON, for endpoints that answer with an array.
+    private func getAny(_ url: URL, _ done: @escaping (Any?) -> Void) {
+        session.dataTask(with: url) { data, _, _ in
+            let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+            DispatchQueue.main.async { done(obj) }
+        }.resume()
+    }
 
     private func getJSON(_ url: URL, _ done: @escaping ([String: Any]?) -> Void) {
         session.dataTask(with: url) { data, _, _ in
@@ -344,6 +364,125 @@ final class Store: NSObject, CLLocationManagerDelegate {
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async { done(ok ? data : nil) }
         }.resume()
+    }
+
+    // MARK: Sports
+
+    private(set) var sports: [SportsEvent] = []
+    private var sportsByComp: [String: [SportsEvent]] = [:]
+    private var lastSports = Date.distantPast
+
+    func refreshSports() {
+        lastSports = Date()
+        let espn = "https://site.api.espn.com/apis/site/v2/sports/"
+        for comp in Settings.sportIDs.compactMap(Competition.find) {
+            switch comp.source {
+            case .espn(let path):
+                getJSON(URL(string: espn + path + "/scoreboard")!) { [weak self] j in
+                    guard let j else { return }
+                    self?.setSports(SportsFetch.parseTeams(j, comp), comp)
+                }
+            case .espnRacing(let path):
+                // Two months either side: the last race's result and the next race.
+                let f = DateFormatter()
+                f.dateFormat = "yyyyMMdd"
+                f.locale = Locale(identifier: "en_US_POSIX")
+                let range = f.string(from: Date().addingTimeInterval(-60 * 86400)) + "-" + f.string(from: Date().addingTimeInterval(75 * 86400))
+                getJSON(URL(string: espn + path + "/scoreboard?dates=" + range)!) { [weak self] j in
+                    guard let j else { return }
+                    self?.setSports(SportsFetch.parseRacing(j, comp), comp)
+                }
+            case .motoGP:
+                fetchMotoGP(comp)
+            }
+        }
+    }
+
+    func sportsChanged() {
+        let on = Set(Settings.sportIDs)
+        sportsByComp = sportsByComp.filter { on.contains($0.key) }
+        rebuildSports()
+        refreshSports()
+    }
+
+    private func setSports(_ events: [SportsEvent], _ comp: Competition) {
+        guard Settings.sportIDs.contains(comp.id) else { return }
+        sportsByComp[comp.id] = events
+        rebuildSports()
+    }
+
+    /// Competitions in list order; within each, live games, then results (newest first), then upcoming (soonest first).
+    private func rebuildSports() {
+        let rank: (SportsEvent.State) -> Int = { $0 == .live ? 0 : $0 == .post ? 1 : 2 }
+        sports = Competition.all.flatMap { comp in
+            (sportsByComp[comp.id] ?? []).sorted { a, b in
+                if rank(a.state) != rank(b.state) { return rank(a.state) < rank(b.state) }
+                return a.state == .post ? a.date > b.date : a.date < b.date
+            }
+        }
+        changed()
+    }
+
+    /// MotoGP's own results service: the last Grand Prix podium and the next Grand Prix.
+    private func fetchMotoGP(_ comp: Competition) {
+        let base = "https://api.motogp.pulselive.com/motogp/v1/results"
+        let link = URL(string: "https://www.motogp.com/en/gp-results")
+        func url(_ p: String) -> URL { URL(string: base + p)! }
+        func title(_ e: [String: Any]) -> String {
+            let n = (e["name"] as? String ?? "MotoGP").uppercased()
+            if n.hasPrefix("GRAND PRIX OF ") { return SportsFetch.titleCase(String(n.dropFirst(14))) + " GP" }
+            return SportsFetch.titleCase(n)
+        }
+        func day(_ s: String?) -> Date {
+            guard let s else { return .distantPast }
+            let iso = ISO8601DateFormatter()
+            if let d = iso.date(from: s) { return d }
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            return f.date(from: String(s.prefix(10))) ?? .distantPast
+        }
+        getAny(url("/seasons")) { [weak self] seasons in
+            guard let self, let season = (seasons as? [[String: Any]])?.first(where: { $0["current"] as? Bool == true }),
+                  let sid = season["id"] as? String else { return }
+            var result: SportsEvent?, next: SportsEvent?
+            let group = DispatchGroup()
+            group.enter()
+            self.getAny(url("/events?seasonUuid=\(sid)&isFinished=false")) { list in
+                defer { group.leave() }
+                let upcoming = ((list as? [[String: Any]]) ?? []).filter { $0["test"] as? Bool != true }
+                    .sorted { day($0["date_start"] as? String) < day($1["date_start"] as? String) }
+                if let e = upcoming.first {
+                    next = SportsEvent(comp: comp, kind: .race(title: title(e), podium: []), state: .pre,
+                                       date: day(e["date_end"] as? String), detail: "", link: link)
+                }
+            }
+            group.enter()
+            self.getAny(url("/events?seasonUuid=\(sid)&isFinished=true")) { list in
+                let done = ((list as? [[String: Any]]) ?? []).filter { $0["test"] as? Bool != true }
+                    .sorted { day($0["date_end"] as? String) < day($1["date_end"] as? String) }
+                guard let e = done.last, let eid = e["id"] as? String else { group.leave(); return }
+                self.getAny(url("/categories?eventUuid=\(eid)")) { cats in
+                    guard let cat = (cats as? [[String: Any]])?.first(where: { ($0["name"] as? String ?? "").hasPrefix("MotoGP") }),
+                          let cid = cat["id"] as? String else { group.leave(); return }
+                    self.getAny(url("/sessions?eventUuid=\(eid)&categoryUuid=\(cid)")) { sessions in
+                        guard let race = (sessions as? [[String: Any]])?.last(where: { $0["type"] as? String == "RAC" }),
+                              let rid = race["id"] as? String else { group.leave(); return }
+                        self.getAny(url("/session/\(rid)/classification?test=false")) { cl in
+                            let rows = ((cl as? [String: Any])?["classification"] as? [[String: Any]]) ?? []
+                            let podium = rows.prefix(3).map { r -> String in
+                                let full = (r["rider"] as? [String: Any])?["full_name"] as? String ?? "?"
+                                return full.split(separator: " ").last.map(String.init) ?? full
+                            }
+                            result = SportsEvent(comp: comp, kind: .race(title: title(e), podium: podium), state: .post,
+                                                 date: day(e["date_end"] as? String), detail: "Result", link: link)
+                            group.leave()
+                        }
+                    }
+                }
+            }
+            group.notify(queue: .main) { self.setSports([result, next].compactMap { $0 }, comp) }
+        }
     }
 
     // MARK: Stocks

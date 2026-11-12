@@ -7,6 +7,7 @@ final class SettingsWindow: NSWindowController, NSTextFieldDelegate {
     private let country = NSPopUpButton()
     private let stocks = NSTextField()
     private let newsStack = NSStackView()
+    private var sportBoxes: [NSButton] = []
     private let city = NSTextField()
     private let cityStatus = NSTextField(labelWithString: "")
     private let useLocation = NSButton(checkboxWithTitle: "Use my current location", target: nil, action: nil)
@@ -45,7 +46,7 @@ final class SettingsWindow: NSWindowController, NSTextFieldDelegate {
         let l = NSTextField(wrappingLabelWithString: s)
         l.font = .systemFont(ofSize: 11)
         l.textColor = .secondaryLabelColor
-        l.preferredMaxLayoutWidth = 400
+        l.preferredMaxLayoutWidth = 520
         return l
     }
 
@@ -95,6 +96,7 @@ final class SettingsWindow: NSWindowController, NSTextFieldDelegate {
             [label("Country"), countryBox],
             [label("Stocks"), stocksBox],
             [label("News"), newsStack],
+            [label("Sports"), sportsGrid()],
             [label("Weather"), weatherBox],
             [label("General"), login],
         ])
@@ -127,6 +129,8 @@ final class SettingsWindow: NSWindowController, NSTextFieldDelegate {
             b.state = on.contains(src.id) ? .on : .off
             newsStack.addArrangedSubview(b)
         }
+        let sportsOn = Set(Settings.sportIDs)
+        for b in sportBoxes { b.state = sportsOn.contains(b.identifier?.rawValue ?? "") ? .on : .off }
         city.stringValue = store.place.name
         cityStatus.stringValue = ""
         useLocation.state = Settings.useLocation ? .on : .off
@@ -152,6 +156,43 @@ final class SettingsWindow: NSWindowController, NSTextFieldDelegate {
         UserDefaults.standard.removeObject(forKey: "symbols")
         store.symbolsChanged()
         load()
+    }
+
+    /// Every competition as a checkbox, in three columns: Football, US sports, Motorsport.
+    private func sportsGrid() -> NSView {
+        let groups = ["Football", "US sports", "Motorsport"]
+        let columns: [NSView] = groups.map { g in
+            let head = NSTextField(labelWithString: g.uppercased())
+            head.font = .systemFont(ofSize: 10, weight: .semibold)
+            head.textColor = .secondaryLabelColor
+            var views: [NSView] = [head]
+            for c in Competition.all where c.group == g {
+                let b = NSButton(checkboxWithTitle: c.name, target: self, action: #selector(sportToggled(_:)))
+                b.identifier = NSUserInterfaceItemIdentifier(c.id)
+                sportBoxes.append(b)
+                views.append(b)
+            }
+            let col = NSStackView(views: views)
+            col.orientation = .vertical
+            col.alignment = .leading
+            col.spacing = 3
+            return col
+        }
+        let row = NSStackView(views: columns)
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 22
+        let box = NSStackView(views: [row, hint("Scores and fixtures from ESPN; MotoGP from motogp.com. Live games update every minute.")])
+        box.orientation = .vertical
+        box.alignment = .leading
+        box.spacing = 6
+        return box
+    }
+
+    @objc private func sportToggled(_ sender: NSButton) {
+        let on = Set(sportBoxes.filter { $0.state == .on }.compactMap { $0.identifier?.rawValue })
+        Settings.sportIDs = Competition.all.map(\.id).filter { on.contains($0) }
+        store.sportsChanged()
     }
 
     @objc private func newsToggled(_ sender: NSButton) {

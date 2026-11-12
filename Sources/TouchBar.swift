@@ -90,10 +90,11 @@ final class WeatherView: NSView {
 // MARK: Scrolling strip (right): stocks or hourly forecast
 
 final class StripView: NSView {
-    enum Cell { case stock(String, Quote?), hour(HourForecast, TimeZone, first: Bool), news(NewsItem), message(String) }
+    enum Cell { case stock(String, Quote?), hour(HourForecast, TimeZone, first: Bool), news(NewsItem), sport(SportsEvent), message(String) }
     var cells: [Cell] = [] { didSet { relayout() } }
     var onTapStock: ((String) -> Void)?
     var onTapNews: ((NewsItem) -> Void)?
+    var onTapSport: ((SportsEvent) -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -108,6 +109,7 @@ final class StripView: NSView {
         case .stock: return 176
         case .hour: return 58
         case .news(let n): return min(max(text(n.title, 11, .medium).size().width + 18, 190), 440)
+        case .sport(let e): return Self.sportWidth(e)
         case .message: return 400
         }
     }
@@ -133,6 +135,7 @@ final class StripView: NSView {
         switch cells[i] {
         case .stock(let sym, _): onTapStock?(sym)
         case .news(let n): onTapNews?(n)
+        case .sport(let e): onTapSport?(e)
         default: break
         }
     }
@@ -145,6 +148,7 @@ final class StripView: NSView {
             case .stock(let sym, let q): drawStock(sym, q, in: r)
             case .hour(let h, let tz, let first): drawHour(h, tz, first, in: r)
             case .news(let n): drawNews(n, in: r)
+            case .sport(let e): drawSport(e, in: r)
             case .message(let m): text(m, 12, .medium, .secondaryLabelColor).draw(at: NSPoint(x: r.minX + 10, y: 8))
             }
         }
@@ -193,6 +197,78 @@ final class StripView: NSView {
         line.stroke()
     }
 
+    // MARK: Sports cells
+
+    /// Kick-off / race time in the viewer's time zone: "20:00" today, "Sat 20:00" this week, "29 Nov" later.
+    static func when(_ d: Date) -> String {
+        let cal = Calendar.current
+        let f = DateFormatter()
+        if cal.isDateInToday(d) { f.dateFormat = "HH:mm" }
+        else if d.timeIntervalSinceNow < 6 * 86400 && d > Date() { f.dateFormat = "EEE HH:mm" }
+        else { f.dateFormat = "d MMM" }
+        return f.string(from: d)
+    }
+
+    private static func status(_ e: SportsEvent) -> String {
+        switch e.state {
+        case .live: return e.detail.isEmpty ? "LIVE" : e.detail
+        case .post:
+            if case .race = e.kind { return "Result · " + when(e.date) }
+            return e.detail.isEmpty ? "Final" : e.detail
+        case .pre: return when(e.date)
+        }
+    }
+
+    private static func line2(_ e: SportsEvent) -> NSAttributedString {
+        switch e.kind {
+        case .match(let l, let r):
+            let m = NSMutableAttributedString()
+            let win = { (a: String?, b: String?) -> Bool in (Int(a ?? "") ?? -1) > (Int(b ?? "") ?? -1) }
+            let lw = e.state == .post && win(l.1, r.1), rw = e.state == .post && win(r.1, l.1)
+            m.append(text(l.0, 11.5, lw ? .bold : .medium))
+            if let a = l.1, let b = r.1 {
+                m.append(text("  \(a) – \(b)  ", 11.5, .semibold, e.state == .live ? green : .white))
+            } else {
+                m.append(text("  v  ", 10.5, .regular, NSColor(white: 1, alpha: 0.55)))
+            }
+            m.append(text(r.0, 11.5, rw ? .bold : .medium))
+            return m
+        case .race(let title, let podium):
+            if podium.isEmpty { return text(title, 11.5, .medium) }
+            let m = NSMutableAttributedString()
+            for (i, name) in podium.enumerated() {
+                m.append(text(["🥇", "🥈", "🥉"][min(i, 2)], 10))
+                m.append(text(name + (i < podium.count - 1 ? "  " : ""), 11.5, i == 0 ? .bold : .medium))
+            }
+            return m
+        }
+    }
+
+    private static func line1(_ e: SportsEvent) -> NSAttributedString {
+        let m = NSMutableAttributedString(attributedString: text(e.comp.tag, 8.5, .heavy, e.comp.nsColor))
+        var extra = ""
+        if case .race(let title, let podium) = e.kind, !podium.isEmpty { extra = title + " · " }
+        m.append(text("  " + extra + status(e), 8.5, .medium, e.state == .live ? green : NSColor(white: 1, alpha: 0.6)))
+        return m
+    }
+
+    static func sportWidth(_ e: SportsEvent) -> CGFloat {
+        min(max(line1(e).size().width, line2(e).size().width) + 20, 360)
+    }
+
+    private func drawSport(_ e: SportsEvent, in r: NSRect) {
+        if e.state == .live {
+            green.setFill()
+            NSBezierPath(ovalIn: NSRect(x: r.maxX - 9, y: r.maxY - 9, width: 5, height: 5)).fill()
+        }
+        Self.line1(e).draw(at: NSPoint(x: r.minX + 8, y: 17.5))
+        let l2 = NSMutableAttributedString(attributedString: Self.line2(e))
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        l2.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: l2.length))
+        l2.draw(in: NSRect(x: r.minX + 8, y: 1, width: r.width - 14, height: 16))
+    }
+
     private func drawNews(_ n: NewsItem, in r: NSRect) {
         let tag = text(n.source.name, 8.5, .heavy, n.source.nsColor)
         tag.draw(at: NSPoint(x: r.minX + 8, y: 17.5))
@@ -227,13 +303,15 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     private var bar: NSTouchBar?
     private let stripButton = NSButton(title: "⛅️", target: nil, action: nil)
     private let weatherView = WeatherView()
-    enum Mode: Int { case stocks, news, forecast }
+    enum Mode: Int { case stocks, news, forecast, sports }
+    /// Left-to-right order of the switch (raw values are what's saved, so they can't be reordered).
+    private static let order: [Mode] = [.stocks, .news, .sports, .forecast]
     private var mode = Mode(rawValue: UserDefaults.standard.integer(forKey: "stripMode")) ?? .stocks
     private lazy var lastNonForecast = mode == .forecast ? Mode.stocks : mode
     private lazy var modePicker: NSSegmentedControl = {
-        let c = NSSegmentedControl(labels: ["📈", "📰", "🌦️"], trackingMode: .selectOne, target: self, action: #selector(modePicked(_:)))
-        c.selectedSegment = mode.rawValue
-        for i in 0..<3 { c.setWidth(36, forSegment: i) }
+        let c = NSSegmentedControl(labels: ["📈", "📰", "🏆", "🌦️"], trackingMode: .selectOne, target: self, action: #selector(modePicked(_:)))
+        c.selectedSegment = Self.order.firstIndex(of: mode) ?? 0
+        for i in 0..<4 { c.setWidth(36, forSegment: i) }
         return c
     }()
     private let strip = StripView(frame: NSRect(x: 0, y: 0, width: 800, height: 30))
@@ -267,6 +345,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             self.setMode(self.mode == .forecast ? self.lastNonForecast : .forecast)
         }
         strip.onTapNews = { NSWorkspace.shared.open($0.link) }
+        strip.onTapSport = { if let u = $0.link { NSWorkspace.shared.open(u) } }
         strip.onTapStock = { sym in
             let enc = sym.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-."))) ?? sym
             if let url = URL(string: "https://finance.yahoo.com/quote/\(enc)") { NSWorkspace.shared.open(url) }
@@ -282,13 +361,13 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         SystemTouchBar.setControlStripPresence(.controlStrip, true)
     }
 
-    @objc private func modePicked(_ c: NSSegmentedControl) { setMode(Mode(rawValue: c.selectedSegment) ?? .stocks) }
+    @objc private func modePicked(_ c: NSSegmentedControl) { setMode(Self.order.indices.contains(c.selectedSegment) ? Self.order[c.selectedSegment] : .stocks) }
 
     private func setMode(_ m: Mode) {
         if m != .forecast { lastNonForecast = m }
         mode = m
         UserDefaults.standard.set(m.rawValue, forKey: "stripMode")
-        modePicker.selectedSegment = m.rawValue
+        modePicker.selectedSegment = Self.order.firstIndex(of: m) ?? 0
         weatherView.showingForecast = m == .forecast
         refresh()
         scrollToStart()
@@ -329,6 +408,10 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
             let hours = store.weather?.hours ?? []
             strip.cells = hours.isEmpty ? [.message("No forecast yet")] :
                 hours.enumerated().map { .hour($1, store.weather!.timeZone, first: $0 == 0) }
+        case .sports:
+            strip.cells = store.sports.isEmpty
+                ? [.message(Settings.sportIDs.isEmpty ? "No competitions — pick some in Settings" : "⏳ Loading scores…")]
+                : store.sports.map { .sport($0) }
         case .news:
             strip.cells = store.news.isEmpty ? [.message(Settings.newsSources.isEmpty ? "No news sources — pick some in Settings" : "⏳ Loading news…")] : store.news.map { .news($0) }
         case .stocks:

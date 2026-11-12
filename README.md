@@ -1,8 +1,8 @@
-# TouchBarDash ⛅️📈📰
+# TouchBarDash ⛅️📈📰🏆
 
-Weather, stocks and news on your MacBook Pro's Touch Bar, for whichever country you choose.
+Weather, stocks, news and sports scores on your MacBook Pro's Touch Bar, for whichever country you choose.
 
-Made by **[@lemonspitz](https://github.com/lemonspitz)** · version 1.0
+Made by **[@lemonspitz](https://github.com/lemonspitz)** · version 1.1
 
 ## Screenshots
 
@@ -14,13 +14,21 @@ Made by **[@lemonspitz](https://github.com/lemonspitz)** · version 1.0
 
 ![News on the Touch Bar](docs/news.png)
 
+**🏆 Sports:** the latest scores and fixtures for the competitions you follow; the winner is in bold, live games have a green dot
+
+![Football scores on the Touch Bar](docs/sports-football.png)
+
+Races show the last podium and when the next race starts
+
+![F1 and MotoGP results on the Touch Bar](docs/sports-racing.png)
+
 **🌦️ Weather:** the next 24 hours, hour by hour
 
 ![Hourly forecast on the Touch Bar](docs/forecast.png)
 
-**Settings:** pick a country, then fine-tune the stocks, news sources and weather
+**Settings:** pick a country, then fine-tune the stocks, news sources, sports and weather
 
-<img src="docs/settings.png" alt="TouchBarDash Settings window" width="508">
+<img src="docs/settings.png" alt="TouchBarDash Settings window" width="594">
 
 ## Install
 
@@ -45,21 +53,25 @@ or type a city in Settings instead.
 ## Features
 
 - **Touch Bar:** a ⛅️ button with the current temperature sits in the Control Strip; tap it to show the dashboard over any app.
-  The 📈 📰 🌦️ switch on the left picks what fills the rest of the bar (swipe to scroll):
+  The 📈 📰 🏆 🌦️ switch on the left picks what fills the rest of the bar (swipe to scroll):
   - 📈 **Stocks:** price, today's change (▲ green / ▼ red) and a sparkline of today's prices against yesterday's close.
     Tap one to open it on Yahoo Finance.
   - 📰 **News:** the latest headlines from the country's news sites, newest first, each labelled with its source and age.
     Tap one to open the article.
+  - 🏆 **Sports:** scores and fixtures for the competitions you pick: results, live games (updated every minute)
+    and upcoming kick-offs in your own time zone. Races show the last podium (🥇🥈🥉) and the next race.
+    Tap one to open the match or race page.
   - 🌦️ **Weather:** the next 24 hours, hour by hour.
-- **Menu bar ⛅️:** current weather (feels-like, high/low, humidity, wind), every stock, and a News submenu.
+- **Menu bar ⛅️:** current weather (feels-like, high/low, humidity, wind), every stock, and News and 🏆 Sports submenus.
 - **Settings** (⛅️ → Settings…, or open the app again from Applications):
   - **Country:** switches the stocks and news to that country.
   - **Stocks:** any [Yahoo Finance](https://finance.yahoo.com) symbols, e.g. `AAPL`, `BBCA.JK`, `^N225`, `BTC-USD`, `GC=F` (gold), `TWDIDR=X`.
   - **News:** choose which of the country's sources to show.
+  - **Sports:** tick the competitions to follow (see below).
   - **Weather:** your current location or any city; °C or °F.
   - **Open at login**.
 
-Weather refreshes every 10 minutes, stocks every minute and news every 10 minutes. No accounts or API keys needed.
+Weather refreshes every 10 minutes, stocks every minute, news every 10 minutes, and sports every 10 minutes (every minute while a game is live). No accounts or API keys needed.
 
 ### Countries
 
@@ -79,10 +91,19 @@ Weather refreshes every 10 minutes, stocks every minute and news every 10 minute
 | 🇰🇷 South Korea | KOSPI, Samsung, SK Hynix, Naver, USD/KRW | Yonhap, The Korea Herald |
 | 🇨🇦 Canada | TSX, RBC, Shopify, TD, USD/CAD | CBC News, Global News |
 
+### Sports
+
+| | Competitions |
+|---|---|
+| ⚽ Football | Premier League, La Liga, Serie A, Bundesliga, Ligue 1, UEFA Champions League, UEFA Europa League, UEFA Conference League, J1 League, AFC Champions League Elite, AFC Champions League Two |
+| 🏀 US sports | NBA, NFL, NHL, MLB |
+| 🏁 Motorsport | Formula 1, MotoGP, NASCAR Cup Series |
+
 ## Data sources
 
 - Weather and city search: [Open-Meteo](https://open-meteo.com)
 - Stocks and currencies: Yahoo Finance (prices may be delayed)
+- Sports: ESPN's public scoreboards; MotoGP from motogp.com's results service
 - News: each publisher's public RSS feed. Kompas has no public feed, so its headlines come from its latest-news page.
 
 Headlines link to the publishers' own sites; all articles belong to their publishers.

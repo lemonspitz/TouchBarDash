@@ -100,6 +100,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             news.submenu = sub
             menu.addItem(news)
         }
+        if !store.sports.isEmpty {
+            let sub = NSMenu()
+            var lastComp = ""
+            for e in store.sports {
+                if e.comp.id != lastComp {
+                    if !lastComp.isEmpty { sub.addItem(.separator()) }
+                    let h = NSMenuItem(title: e.comp.name, action: nil, keyEquivalent: "")
+                    h.attributedTitle = NSAttributedString(string: e.comp.name, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.secondaryLabelColor])
+                    sub.addItem(h)
+                    lastComp = e.comp.id
+                }
+                let i = sub.addItem(withTitle: Self.describe(e), action: #selector(openSport(_:)), keyEquivalent: "")
+                i.target = self
+                i.representedObject = e.link
+            }
+            let item = NSMenuItem(title: "🏆  Sports", action: nil, keyEquivalent: "")
+            item.submenu = sub
+            if store.news.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         add("Show on Touch Bar", #selector(showBar))
         add("Settings…", #selector(openSettings), key: ",")
@@ -116,6 +136,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func openNews(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL { NSWorkspace.shared.open(url) }
+    }
+
+    static func describe(_ e: SportsEvent) -> String {
+        let when = StripView.when(e.date)
+        switch e.kind {
+        case .match(let l, let r):
+            let live = e.state == .live ? "🟢 " : ""
+            if let a = l.1, let b = r.1 { return "\(live)\(l.0) \(a) – \(b) \(r.0)   \(e.detail)" }
+            return "\(l.0) v \(r.0)   \(when)"
+        case .race(let title, let podium):
+            if podium.isEmpty { return "\(title)   \(e.state == .live ? "🟢 Live" : when)" }
+            return "\(title):  🥇 \(podium.joined(separator: "  "))"
+        }
+    }
+
+    @objc func openSport(_ sender: NSMenuItem) {
         if let url = sender.representedObject as? URL { NSWorkspace.shared.open(url) }
     }
 
